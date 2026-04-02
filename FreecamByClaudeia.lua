@@ -1,9 +1,9 @@
 --[[
-    Mobile Freecam — LocalScript
-    Put this inside StarterPlayerScripts.
+    Mobile Freecam — Hosted Version
+    Compatible with loadstring()
     
-    Modified by requested layout (No Up/Down buttons, Speed panel on the right)
     Language: English
+    Layout: Custom (No Up/Down buttons, Speed panel on the right)
 ]]
 
 local Players = game:GetService("Players")
@@ -84,6 +84,10 @@ end
 -- ══════════════════════════════════════════
 -- BUILD GUI
 -- ══════════════════════════════════════════
+
+-- Evita duplicar a interface se carregar o script mais de uma vez
+local oldGui = playerGui:FindFirstChild("FreecamMobileGui")
+if oldGui then oldGui:Destroy() end
 
 local gui = Instance.new("ScreenGui")
 gui.Name = "FreecamMobileGui"
@@ -365,6 +369,364 @@ do
 		state.totalDist = (current - state.startPos).Magnitude
 		if state.totalDist > TAP_THRESHOLD then
 			state.dragging = true
+			local deltaX = input.Position.X - state.startPos.X
+			local deltaY = input.Position.Y - state.startPos.Y
+			topBar.Position = UDim2.new(
+				state.startAnchor.X.Scale,
+				state.startAnchor.X.Offset + deltaX,
+				state.startAnchor.Y.Scale,
+				state.startAnchor.Y.Offset + deltaY
+			)
+		end
+	end)
+
+	toggleBtn.InputEnded:Connect(function(input)
+		if input ~= state.touch then return end
+		if input.UserInputType ~= Enum.UserInputType.Touch then return end
+		if state.totalDist <= TAP_THRESHOLD then
+			if freecamOn then
+				disableFreecam()
+			else
+				enableFreecam()
+			end
+		end
+		state.touch = nil
+		state.dragging = false
+	end)
+end
+
+-- ══════════════════════════════════════════
+-- DRAG: LOCK BUTTON
+-- ══════════════════════════════════════════
+
+do
+	local state = {
+		touch=nil, startPos=nil, startAnchor=nil,
+		totalDist = 0, dragging = false,
+	}
+
+	lockBtn.InputBegan:Connect(function(input)
+		if input.UserInputType ~= Enum.UserInputType.Touch then return end
+		state.touch = input
+		state.startPos = Vector2.new(input.Position.X, input.Position.Y)
+		state.startAnchor = topBar.Position
+		state.totalDist = 0
+		state.dragging = false
+	end)
+
+	lockBtn.InputChanged:Connect(function(input)
+		if input ~= state.touch then return end
+		if input.UserInputType ~= Enum.UserInputType.Touch then return end
+		local current = Vector2.new(input.Position.X, input.Position.Y)
+		state.totalDist = (current - state.startPos).Magnitude
+		if state.totalDist > TAP_THRESHOLD then
+			state.dragging = true
+			local deltaX = input.Position.X - state.startPos.X
+			local deltaY = input.Position.Y - state.startPos.Y
+			topBar.Position = UDim2.new(
+				state.startAnchor.X.Scale,
+				state.startAnchor.X.Offset + deltaX,
+				state.startAnchor.Y.Scale,
+				state.startAnchor.Y.Offset + deltaY
+			)
+		end
+	end)
+
+	lockBtn.InputEnded:Connect(function(input)
+		if input ~= state.touch then return end
+		if input.UserInputType ~= Enum.UserInputType.Touch then return end
+		if state.totalDist <= TAP_THRESHOLD then
+			dragModeOn = not dragModeOn
+			updateLockVisuals()
+		end
+		state.touch = nil
+		state.dragging = false
+	end)
+end
+
+-- ══════════════════════════════════════════
+-- PIN BUTTON
+-- ══════════════════════════════════════════
+
+do
+	local state = {
+		touch=nil, startPos=nil, startAnchor=nil,
+		totalDist = 0,
+	}
+
+	pinBtn.InputBegan:Connect(function(input)
+		if input.UserInputType ~= Enum.UserInputType.Touch then return end
+		state.touch = input
+		state.startPos = Vector2.new(input.Position.X, input.Position.Y)
+		state.startAnchor = topBar.Position
+		state.totalDist = 0
+	end)
+
+	pinBtn.InputChanged:Connect(function(input)
+		if input ~= state.touch then return end
+		if input.UserInputType ~= Enum.UserInputType.Touch then return end
+		local current = Vector2.new(input.Position.X, input.Position.Y)
+		state.totalDist = (current - state.startPos).Magnitude
+		if state.totalDist > TAP_THRESHOLD then
+			local deltaX = input.Position.X - state.startPos.X
+			local deltaY = input.Position.Y - state.startPos.Y
+			topBar.Position = UDim2.new(
+				state.startAnchor.X.Scale,
+				state.startAnchor.X.Offset + deltaX,
+				state.startAnchor.Y.Scale,
+				state.startAnchor.Y.Offset + deltaY
+			)
+		end
+	end)
+
+	pinBtn.InputEnded:Connect(function(input)
+		if input ~= state.touch then return end
+		if input.UserInputType ~= Enum.UserInputType.Touch then return end
+		if state.totalDist <= TAP_THRESHOLD then
+			if isPinned then
+				isPinned = false
+				pinnedCamCF = nil
+			else
+				isPinned = true
+				pinnedCamCF = {
+					pos = camPos,
+					yaw = yaw,
+					pitch = pitch,
+				}
+			end
+			updatePinVisuals()
+		end
+		state.touch = nil
+	end)
+end
+
+-- ══════════════════════════════════════════
+-- SPEED BUTTONS
+-- ══════════════════════════════════════════
+
+speedUp.Activated:Connect(function()
+	if dragModeOn then return end
+	camSpeed = math.min(camSpeed + SPEED_STEP, MAX_SPEED)
+	speedLabel.Text = "Speed: " .. camSpeed
+end)
+
+speedDown.Activated:Connect(function()
+	if dragModeOn then return end
+	camSpeed = math.max(camSpeed - SPEED_STEP, MIN_SPEED)
+	speedLabel.Text = "Speed: " .. camSpeed
+end)
+
+-- ══════════════════════════════════════════
+-- DRAG: SPEED PANEL
+-- ══════════════════════════════════════════
+
+do
+	local state = {
+		touch=nil, startPos=nil, startAnchor=nil,
+		totalDist = 0, dragging = false,
+	}
+
+	speedPanel.InputBegan:Connect(function(input)
+		if input.UserInputType ~= Enum.UserInputType.Touch then return end
+		state.touch = input
+		state.startPos = Vector2.new(input.Position.X, input.Position.Y)
+		state.startAnchor = speedPanel.Position
+		state.totalDist = 0
+		state.dragging = false
+	end)
+
+	speedPanel.InputChanged:Connect(function(input)
+		if input ~= state.touch then return end
+		if input.UserInputType ~= Enum.UserInputType.Touch then return end
+		local current = Vector2.new(input.Position.X, input.Position.Y)
+		state.totalDist = (current - state.startPos).Magnitude
+		if dragModeOn and state.totalDist > TAP_THRESHOLD then
+			state.dragging = true
+			local deltaX = input.Position.X - state.startPos.X
+			local deltaY = input.Position.Y - state.startPos.Y
+			speedPanel.Position = UDim2.new(
+				state.startAnchor.X.Scale,
+				state.startAnchor.X.Offset + deltaX,
+				state.startAnchor.Y.Scale,
+				state.startAnchor.Y.Offset + deltaY
+			)
+		end
+	end)
+
+	speedPanel.InputEnded:Connect(function(input)
+		if input ~= state.touch then return end
+		state.touch = nil
+		state.dragging = false
+	end)
+end
+
+-- ══════════════════════════════════════════
+-- HIT TEST HELPERS
+-- ══════════════════════════════════════════
+
+local function isOnRect(pos, obj)
+	local ap = obj.AbsolutePosition
+	local as = obj.AbsoluteSize
+	return pos.X >= ap.X and pos.X <= ap.X + as.X
+		and pos.Y >= ap.Y and pos.Y <= ap.Y + as.Y
+end
+
+local function isOnUI(pos)
+	local elements = {
+		lockBtn, pinBtn, speedDown, speedUp,
+		speedPanel, toggleBtn, topBar,
+	}
+	for _, obj in ipairs(elements) do
+		if isOnRect(pos, obj) then
+			return true
+		end
+	end
+	local touchGui = playerGui:FindFirstChild("TouchGui")
+	if touchGui then
+		local touchFrame = touchGui:FindFirstChild("TouchControlFrame", true)
+		if touchFrame then
+			local thumbstick = touchFrame:FindFirstChild("DynamicThumbstickFrame", true)
+				or touchFrame:FindFirstChild("ThumbstickFrame", true)
+			if thumbstick and thumbstick:IsA("GuiObject") and isOnRect(pos, thumbstick) then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+local function isOnToggleBtn(pos)
+	return isOnRect(pos, toggleBtn) or isOnRect(pos, topBar)
+end
+
+local function isLeftSide(pos)
+	local viewSize = camera.ViewportSize
+	return pos.X < viewSize.X * 0.4
+end
+
+-- ══════════════════════════════════════════
+-- GLOBAL TOUCH HANDLING
+-- ══════════════════════════════════════════
+
+UserInputService.TouchStarted:Connect(function(input, _gameProcessed)
+	if not freecamOn then return end
+	local pos = input.Position
+	if isOnToggleBtn(pos) then return end
+	if isOnUI(pos) then return end
+	if isLeftSide(pos) then return end
+	if not lookTouch then
+		lookTouch = input
+		lastLookPos = pos
+	end
+end)
+
+UserInputService.TouchMoved:Connect(function(input)
+	if not freecamOn then return end
+	if input == lookTouch and lastLookPos then
+		local delta = input.Position - lastLookPos
+		yaw = yaw - delta.X * LOOK_SENSITIVITY
+		pitch = math.clamp(pitch - delta.Y * LOOK_SENSITIVITY, -89, 89)
+		lastLookPos = input.Position
+	end
+end)
+
+UserInputService.TouchEnded:Connect(function(input)
+	if input == lookTouch then
+		lookTouch = nil
+		lastLookPos = nil
+	end
+end)
+
+-- ══════════════════════════════════════════
+-- READ MOVE VECTOR
+-- ══════════════════════════════════════════
+
+local function getMoveVector()
+	if controlsModule then
+		local ok, vec = pcall(function()
+			return controlsModule:GetMoveVector()
+		end)
+		if ok and vec then
+			return vec
+		end
+	end
+	return Vector3.zero
+end
+
+-- ══════════════════════════════════════════
+-- FREEZE / UNFREEZE CHARACTER
+-- ══════════════════════════════════════════
+
+local function freezeCharacter()
+	local char = player.Character
+	if not char then return end
+	local humanoid = char:FindFirstChildWhichIsA("Humanoid")
+	local rootPart = char:FindFirstChild("HumanoidRootPart")
+	if humanoid then
+		origWalkSpeed = humanoid.WalkSpeed
+		origJumpPower = humanoid.JumpPower
+		origJumpHeight = humanoid.JumpHeight
+		humanoid.WalkSpeed = 0
+		humanoid.JumpPower = 0
+		humanoid.JumpHeight = 0
+		humanoid:Move(Vector3.zero, false)
+	end
+	if rootPart then
+		frozenPosition = rootPart.CFrame
+		rootPart.AssemblyLinearVelocity = Vector3.zero
+		rootPart.AssemblyAngularVelocity = Vector3.zero
+		rootPart.Anchored = true
+		rootPart.CFrame = frozenPosition
+	end
+	if controlsModule then
+		pcall(function() controlsModule:Disable() end)
+		task.defer(function()
+			if controlsModule then
+				pcall(function() controlsModule:Enable() end)
+			end
+		end)
+	end
+end
+
+local function unfreezeCharacter()
+	local char = player.Character
+	if not char then return end
+	local humanoid = char:FindFirstChildWhichIsA("Humanoid")
+	local rootPart = char:FindFirstChild("HumanoidRootPart")
+	if rootPart then
+		rootPart.Anchored = false
+		rootPart.AssemblyLinearVelocity = Vector3.zero
+		rootPart.AssemblyAngularVelocity = Vector3.zero
+	end
+	if humanoid then
+		humanoid.WalkSpeed = origWalkSpeed or 16
+		humanoid.JumpPower = origJumpPower or 50
+		humanoid.JumpHeight = origJumpHeight or 7.2
+		humanoid:Move(Vector3.zero, false)
+	end
+	frozenPosition = nil
+end
+
+-- ══════════════════════════════════════════
+-- ENABLE / DISABLE FREECAM
+-- ══════════════════════════════════════════
+
+enableFreecam = function()
+	freecamOn = true
+	origCamType = camera.CameraType
+	origCamSubject = camera.CameraSubject
+	camera.CameraType = Enum.CameraType.Scriptable
+
+	freezeCharacter()
+
+	if isPinned and pinnedCamCF then
+		camPos = pinnedCamCF.pos
+		yaw = pinnedCamCF.yaw
+		pitch = pinnedCamCF.pitch
+	else
+		local cf = camera.CFrame
+		camPos = cf.Position
+		logging = true
 			local deltaX = input.Position.X - state.startPos.X
 			local deltaY = input.Position.Y - state.startPos.Y
 			topBar.Position = UDim2.new(
